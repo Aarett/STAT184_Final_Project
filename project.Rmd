@@ -1,0 +1,103 @@
+---
+title: "Final Project"
+author: "Aaron Harter"
+output: html_notebook
+---
+
+# Goal  
+
+Through this project, I will be exploring the effectiveness of COVID response based on continental data. I will be primarily looking at deaths and recovery as well as attempting to consider reporting rate.  
+
+### Import Data  
+
+```{r}
+library(ggplot2)
+library(magrittr)
+library(DataComputing)
+clean_data <- read.csv("covid_19_clean_complete.csv")
+worldometer <- read.csv("worldometer_data.csv")
+```
+
+### Inspect Data  
+
+```{r}
+clean_data %>% head()
+```
+
+```{r}
+worldometer %>% head()
+```
+
+# Analysis  
+
+How has the number of total cases differed by WHO region over time?  
+
+```{r}
+clean_data %>% group_by(WHO.Region, Date) %>% summarise(n=sum(Active)) %>% ggplot(aes(x=Date,y=n)) + geom_point() + facet_wrap(~WHO.Region)
+```
+
+From the above data, we can see that the number of active cases reported are significantly higher in the Americas region than any other region available. We will next look at the number of successful recoveries proportionate to the number of deaths.  
+
+#### Is the death rate different across differing continents?  
+
+```{r}
+worldometer %>% group_by(Continent) %>% summarise(AllRecovered=sum(TotalRecovered, na.rm=TRUE), AllDeath = sum(TotalDeaths, na.rm=TRUE)) %>% group_by(Continent) %>% summarise(n=AllDeath/(AllRecovered+AllDeath))
+```
+
+From here, we can see the differences in mortality rates. This data presents a very surprising statistic of ~ 11% mortality rate in European countries. This is by far the worst with North America following up at ~ 7% mortality presented in the dataset. The reason this data is so surprising is because these continents are generally believed to have some of the best public healthcare systems globally. Perhaps European and North American countries should take note of Australia/Oceania's response with ~ 2% mortality rate. It should also be considered that some factors may not be present in the dataset (such as population age distribution, preexisting conditions, and number reporting standards by region). Further analysis may include joining this data with a population dataset to explore those factors for correlations. That, however, is outside of the scope of this paper.  
+
+#### What happens if we take reporting rate into account?  
+
+These numbers represent the overall testing proportion of the population assuming a unique sampling of the population (false assumption).  
+
+```{r}
+combined_data <- worldometer %>% left_join(clean_data,Country.Region=Country.Region) %>% select(Continent,Population,TotalTests,Date,Deaths,Recovered) %>% mutate(Test_Prop=TotalTests/Population, na.rm=TRUE) %>% select(Continent,Date,Deaths,Recovered,Test_Prop)
+combined_data%>%select(Continent,Test_Prop) %>% group_by(Continent) %>% summarise(Test_Prop=mean(Test_Prop,na.rm=TRUE))
+
+combined_data[is.na(combined_data)]<-0 # assuming NA testing reported assumes zero testing. May add data bias, but so may not assuming zero
+
+combined_data %>% group_by(Continent) %>% summarise(n=mean(Test_Prop,na.rm=TRUE))
+```
+
+```{r}
+combined_data %>% group_by(Continent,Date) %>% summarise(Mortality=(sum(Deaths,na.rm=TRUE)/(sum(Recovered,na.rm=TRUE)+sum(Deaths,na.rm=TRUE)))/Test_Prop) %>% ggplot(aes(x=Date,y=Mortality)) + geom_point() + facet_wrap(~Continent)
+```
+
+When taking testing proportion into account, we can see that African, South American, and North American countries appear to have a much higher number of cases/deaths relative to Europe and Asia than reported. This could suggest that differences in testing play a significant role in Europe's high mortality rate reported. Note: many other environmental factors could explain this graph. This is not a conclusive visualization, but rather suggests that some other factor is influencing the data.  
+
+#### Creating a Continental Country Model
+
+We will now calculate normal curve parameters to fit based on each continent. This will fit a density distribution encompassing the death count based on continent. Standard deviation graphed will be the calculated standard deviation from every country within a continent. First, we find our mean and standard deviation.  
+
+```{r}
+generate_distributions <- function(dataset){
+  normal <- dataset %>% group_by(Continent) %>% summarise(mn=mean(TotalDeaths,na.rm=TRUE),sd=sd(TotalDeaths,na.rm=TRUE))
+  normal
+}
+
+distribution_data <- generate_distributions(worldometer)
+distribution_data
+```
+
+We then graph our data. The "colors" vector can be used as a label for the data.  
+
+```{r}
+countries<-c("Africa","Asia","Australia/Oceania","Europe","North America","South America")
+means<-c(402.0727, 2395.8810, 70.2500, 4560.7111, 8209.1071, 11914.2308)
+sd<-c(1439.6963, 6942.2506, 123.5297, 10314.9200, 31775.5416, 26782.2058)
+colors<-c("red","green","blue","coral","purple","orange")
+for (i in 1:6){
+  curve(dnorm(x,mean=means[i],sd=sd[i]),xlim=c(-sd[5],sd[5]*2),main="Death Density Distributions",col=colors[i], add=TRUE)
+}
+```
+
+From the above curves, we can visualize the distribution of all countries' reported death rates based on continent. These differing reports in deaths can be explained by different reporting rates as well as differing population sizes. Note that this is a density graph. A spike in numbers indicates that the mean is at the peak.  
+
+# Conclusion  
+
+From my analysis, there are a few things that can be concluded. First, testing numbers are concerningly low in African countries. When taking into account the low testing, I suspect that African numbers are much worse than what is being reported. Additionally, the mortality rate in Europe is significantly higher than other regions. The best course of action would be further exploration into what is going wrong. Does some population quality such as age play a more significant role? Are numbers being inflated for political agenda? Is the quality of healthcare at a lower standard than previously expected? All of these questions could serve as followup. Lastly, exploration into the Asian countries' responses could help the global response to the pandemic. With such a large portion of the population and imparting preexisting knowledge of heavy population density, the numbers presented seem astoundingly good.  
+
+
+In the end, we are all in this together. As the vaccine is rolled out, we can only hope that life will eventually return to normal. And with this data, future generations will hopefully be more prepared for the next global pandemic.  
+
+
